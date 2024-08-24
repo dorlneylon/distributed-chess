@@ -1,0 +1,42 @@
+{
+  "name": "chess",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.10",
+    "@grpc/proto-loader": "^0.7.13",
+    "@multiformats/multiaddr": "^12.3.0",
+    "@nextui-org/react": "^2.4.6",
+    "@reduxjs/toolkit": "^2.2.7",
+    "classnames": "^2.5.1",
+    "framer-motion": "^11.3.24",
+    "install": "^0.13.0",
+    "long": "^5.2.3",
+    "next": "14.2.5",
+    "nice-grpc": "^2.1.9",
+    "nice-grpc-web": "^3.3.4",
+    "protobufjs": "^7.3.2",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.5",
+    "grpc-tools": "^1.12.4",
+    "ts-proto": "^1.181.0",
+    "postcss": "^8",
+    "protoc-gen-grpc-web": "^1.5.0",
+    "protoc-gen-ts": "^0.8.7",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}

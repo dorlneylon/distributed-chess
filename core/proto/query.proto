@@ -1,0 +1,60 @@
+syntax = "proto3";
+package query;
+
+import "game.proto";
+
+service Node {
+    rpc State(StateRequest) returns (StateResponse);
+    rpc Start(StartRequest) returns (StartResponse);
+    rpc Transact(Transaction) returns (TransactionResponse);
+    rpc IsInGame(IsInGameRequest) returns (IsInGameResponse);
+}
+
+// ---------- State ----------
+
+message StateRequest {
+    string white_player = 1;
+    string black_player = 2;
+}
+
+message StateResponse {
+    game.GameState state = 1;
+}
+
+// ---------- Start ----------
+
+message StartRequest {
+    string white_player = 1;
+    string black_player = 2;
+}
+
+message StartResponse {
+    game.GameState state = 1;
+}
+
+// ---------- Transaction ----------
+
+message Transaction {
+    string white_player = 1;
+    string black_player = 2;
+    repeated Position action = 3;
+}
+
+message Position {
+    uint32 x = 1;
+    uint32 y = 2;
+}
+
+message TransactionResponse {
+    bool ok = 1;
+}
+
+// ---------- IsInGame ----------
+
+message IsInGameRequest {
+    string player = 1;
+}
+
+message IsInGameResponse {
+    optional game.GameState state = 1;
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+package game;
+
+
+// ---------- GameState ----------
+
+message GameState {
+    Color turn = 1;
+    string white_player = 2;
+    string black_player = 3;
+    Board board = 6;
+}
+
+message Piece {
+    Color color = 1;
+    string kind = 2;
+}
+
+enum Color {
+    WHITE = 0;
+    BLACK = 1;
+}
+
+message Location {
+    repeated uint32 coords = 1;
+    Piece piece = 2;
+}
+
+message Board {
+    repeated Row rows = 1;
+}
+
+message Row {
+    repeated Cell cells = 1;
+}
+
+message Cell {
+    optional Piece piece = 1;
+}
