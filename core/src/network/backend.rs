@@ -66,17 +66,9 @@ impl Node for NodeServicer {
         request: Request<Transaction>,
     ) -> Result<Response<TransactionResponse>, Status> {
         let r = request.into_inner();
-
-        let ok = self.app.is_valid_tx(&r).await.is_ok();
-
-        if ok {
-            self.app
-                .local_pool
-                .write()
-                .await
-                .insert(format!("{}:{}", r.white_player, r.black_player), r.clone());
+        if self.app.is_valid_tx(&r).await.is_err() {
+            return Ok(Response::new(TransactionResponse { ok: false }));
         }
-
         let serialized = serde_json::to_string(&r).map_err(|e| Status::internal(e.to_string()))?;
 
         self.app
@@ -90,14 +82,13 @@ impl Node for NodeServicer {
             .await
             .map_err(|e| Status::internal(e.to_string()))?
             == self.app.local_peer_id.clone().unwrap()
-            && ok
         {
-            broadcast_block(&self.app)
+            broadcast_block(&self.app, &r)
                 .await
                 .map_err(|e| Status::internal(e.to_string()))?;
         }
 
-        Ok(Response::new(TransactionResponse { ok }))
+        Ok(Response::new(TransactionResponse { ok: true }))
     }
 
     async fn is_in_game(

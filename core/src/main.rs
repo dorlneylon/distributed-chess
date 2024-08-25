@@ -12,7 +12,6 @@ use network::backend::NodeServicerBuilder;
 use network::p2p::{create_behaviour, match_behaviour, LOCAL_KEYS};
 use network::utils::SwarmMessageType;
 use once_cell::sync::Lazy;
-use pb::query::Transaction;
 use std::collections::{HashMap, HashSet};
 use std::env::args;
 use std::error::Error;
@@ -24,7 +23,6 @@ use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 
 const PEERS: u32 = 4;
-const MAX_TXS_PER_BLOCK: u32 = 10;
 const VIEW_N_ROT_INTERVAL: u64 = 10;
 static CONNECTED_PEERS: Lazy<RwLock<Vec<String>>> = Lazy::new(|| RwLock::new(Vec::new()));
 static CLOCK: Lazy<RwLock<DateTime<Utc>>> = Lazy::new(|| RwLock::new(Utc::now()));
@@ -44,7 +42,6 @@ use pb::query::node_server::NodeServer;
 pub struct App {
     pub swarm_tx: mpsc::Sender<SwarmMessageType>,
     pub db: RwLock<HashMap<String, GameState>>,
-    pub local_pool: RwLock<HashMap<String, Transaction>>,
     pub state_votes: RwLock<HashMap<B256, HashSet<String>>>,
     pub latest_block_hash: RwLock<B256>,
     pub latest_block_timestamp: RwLock<u64>,
@@ -57,7 +54,6 @@ impl App {
         App {
             swarm_tx,
             db: RwLock::new(HashMap::new()),
-            local_pool: RwLock::new(HashMap::new()),
             state_votes: RwLock::new(HashMap::new()),
             latest_block_hash: RwLock::new(B256::default()),
             latest_block_timestamp: RwLock::new(Utc::now().timestamp() as u64),
@@ -112,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let node_servicer = NodeServicerBuilder::default().with_app(&*app).build();
 
-    let addr = "[::]:50053".parse()?;
+    let addr = "[::]:50050".parse()?;
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

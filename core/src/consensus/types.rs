@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct Block {
     pub view_n: u32,
     pub previous_block_hash: B256,
-    pub txs: Vec<Transaction>,
-    pub timestamp: i64,
+    pub tx: Transaction,
     pub hash: B256,
+    pub timestamp: i64,
     pub qc: Option<QuorumCertificate>,
 }
 
@@ -17,7 +17,7 @@ pub struct Block {
 pub struct BlockBuilder {
     view_n: u32,
     previous_block_hash: B256,
-    txs: Vec<Transaction>,
+    tx: Transaction,
 }
 
 impl BlockBuilder {
@@ -32,23 +32,19 @@ impl BlockBuilder {
         }
     }
 
+    pub fn with_tx(self, tx: Transaction) -> Self {
+        Self { tx, ..self }
+    }
+
     pub fn build(self) -> Block {
         Block {
             view_n: self.view_n,
             previous_block_hash: self.previous_block_hash,
-            txs: self.txs.clone(),
+            tx: self.tx.clone(),
             timestamp: Utc::now().timestamp(),
             hash: keccak256(&serde_json::to_string(&self).unwrap()),
             qc: None,
         }
-    }
-
-    pub fn add_tx(&mut self, tx: &Transaction) {
-        self.txs.push(tx.clone());
-    }
-
-    pub fn tx_size(&self) -> usize {
-        self.txs.len()
     }
 }
 

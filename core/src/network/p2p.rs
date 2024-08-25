@@ -2,7 +2,7 @@ use crate::{
     consensus::types::{Block, BlockBuilder, Commit, QuorumCertificate},
     network::utils::SwarmMessageType,
     pb::query::{StartRequest, Transaction},
-    App, MAX_TXS_PER_BLOCK, PEERS,
+    App, PEERS,
 };
 use libp2p::{
     gossipsub::{
@@ -141,37 +141,20 @@ async fn handle_start_event(message: GossipsubMessage, app: &App) -> Result<(), 
 async fn handle_proposal_event(message: GossipsubMessage, app: &App) -> Result<(), Box<dyn Error>> {
     let msg = String::from_utf8_lossy(&message.data);
     let tx: Transaction = serde_json::from_str(&msg)?;
-    println!("Pushed: {:?}", tx);
-    app.local_pool
-        .write()
-        .await
-        .insert(format!("{}:{}", tx.white_player, tx.black_player), tx);
 
     if app.get_current_leader().await? == app.local_peer_id.clone().unwrap() {
-        broadcast_block(app).await?;
+        broadcast_block(app, &tx).await?;
     }
 
     Ok(())
 }
 
-pub async fn broadcast_block(app: &App) -> Result<(), Box<dyn Error>> {
-    let mut block = BlockBuilder::default()
+pub async fn broadcast_block(app: &App, tx: &Transaction) -> Result<(), Box<dyn Error>> {
+    let block = BlockBuilder::default()
         .with_previous_block_hash(app.latest_block_hash.read().await.clone())
-        .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32);
-
-    for tx in app.local_pool.read().await.iter() {
-        if block.tx_size() as u32 >= MAX_TXS_PER_BLOCK {
-            break;
-        }
-
-        if app.is_valid_tx(tx.1).await.is_ok() {
-            block.add_tx(tx.1);
-        } else {
-            app.local_pool.write().await.remove(tx.0);
-        }
-    }
-
-    let block = block.build();
+        .with_tx(tx.clone())
+        .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32)
+        .build();
 
     app.publish(QUORUM_TOPIC.clone(), serde_json::to_string(&block)?)
         .await?;
@@ -284,7 +267,7 @@ async fn handle_commitment(commit: Commit, app: &App) -> Result<(), Box<dyn Erro
         println!("Sent commit: {:?}", b);
 
         app.view_n
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .store(b.view_n as usize + 1, std::sync::atomic::Ordering::Relaxed);
 
         app.commit_block(b).await?;
     }
@@ -299,8 +282,10 @@ async fn handle_commit_event(message: GossipsubMessage, app: &App) -> Result<(),
     if app.view_n.load(std::sync::atomic::Ordering::Relaxed) == block.clone().view_n as usize
         && app.get_current_leader().await? == message.source.unwrap().to_string()
     {
-        app.view_n
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        app.view_n.store(
+            block.view_n as usize + 1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         app.commit_block(block.clone()).await?;
     }
 
