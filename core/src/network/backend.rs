@@ -67,20 +67,37 @@ impl Node for NodeServicer {
     ) -> Result<Response<TransactionResponse>, Status> {
         let r = request.into_inner();
 
-        if self.app.get_current_leader().await != self.app.local_peer_id.clone().unwrap() {
-            let serialized =
-                serde_json::to_string(&r).map_err(|e| Status::internal(e.to_string()))?;
+        let ok = self.app.is_valid_tx(&r).await.is_ok();
+
+        if ok {
             self.app
-                .publish(PROPOSAL_TOPIC.clone(), serialized)
+                .local_pool
+                .write()
                 .await
-                .map_err(|e| Status::internal(e.to_string()))?;
-        } else {
-            broadcast_block(r, &self.app)
+                .insert(format!("{}:{}", r.white_player, r.black_player), r.clone());
+        }
+
+        let serialized = serde_json::to_string(&r).map_err(|e| Status::internal(e.to_string()))?;
+
+        self.app
+            .publish(PROPOSAL_TOPIC.clone(), serialized)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        if self
+            .app
+            .get_current_leader()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            == self.app.local_peer_id.clone().unwrap()
+            && ok
+        {
+            broadcast_block(&self.app)
                 .await
                 .map_err(|e| Status::internal(e.to_string()))?;
         }
 
-        Ok(Response::new(TransactionResponse { ok: true }))
+        Ok(Response::new(TransactionResponse { ok }))
     }
 
     async fn is_in_game(

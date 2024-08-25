@@ -1,8 +1,8 @@
 use crate::{
     consensus::types::{Block, BlockBuilder, Commit, QuorumCertificate},
-    network::state::SwarmMessageType,
+    network::utils::SwarmMessageType,
     pb::query::{StartRequest, Transaction},
-    App, PEERS,
+    App, MAX_TXS_PER_BLOCK, PEERS,
 };
 use libp2p::{
     gossipsub::{
@@ -109,7 +109,7 @@ async fn handle_gossipsub(event: GossipsubEvent, app: &App) -> Result<(), Box<dy
 
         println!(
             "\n{:?}\n{:?}\n{:?}\n",
-            app.chain.read().await,
+            app.latest_block_hash.read().await,
             app.view_n.load(std::sync::atomic::Ordering::Relaxed),
             app.db.read().await,
         );
@@ -140,28 +140,47 @@ async fn handle_start_event(message: GossipsubMessage, app: &App) -> Result<(), 
 
 async fn handle_proposal_event(message: GossipsubMessage, app: &App) -> Result<(), Box<dyn Error>> {
     let msg = String::from_utf8_lossy(&message.data);
+    let tx: Transaction = serde_json::from_str(&msg)?;
+    println!("Pushed: {:?}", tx);
+    app.local_pool
+        .write()
+        .await
+        .insert(format!("{}:{}", tx.white_player, tx.black_player), tx);
 
-    if app.get_current_leader().await != app.local_peer_id.clone().unwrap() {
-        return Ok(());
+    if app.get_current_leader().await? == app.local_peer_id.clone().unwrap() {
+        broadcast_block(app).await?;
     }
 
-    let tx: Transaction = serde_json::from_str(&msg)?;
-    broadcast_block(tx, app).await
+    Ok(())
 }
 
-pub async fn broadcast_block(tx: Transaction, app: &App) -> Result<(), Box<dyn Error>> {
-    let block = BlockBuilder::default()
-        .with_previous_block_hash(app.chain.read().await.last().unwrap().hash)
-        .with_tx(tx)
-        .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32)
-        .build();
+pub async fn broadcast_block(app: &App) -> Result<(), Box<dyn Error>> {
+    let mut block = BlockBuilder::default()
+        .with_previous_block_hash(app.latest_block_hash.read().await.clone())
+        .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32);
+
+    for tx in app.local_pool.read().await.iter() {
+        if block.tx_size() as u32 >= MAX_TXS_PER_BLOCK {
+            break;
+        }
+
+        if app.is_valid_tx(tx.1).await.is_ok() {
+            block.add_tx(tx.1);
+        } else {
+            app.local_pool.write().await.remove(tx.0);
+        }
+    }
+
+    let block = block.build();
 
     app.publish(QUORUM_TOPIC.clone(), serde_json::to_string(&block)?)
         .await?;
 
-    if let Err(e) = app.approve_proposal(block.clone()).await {
-        return Err(e);
-    }
+    println!(
+        "Broadcasted block: {:?} for view_n: {}",
+        block,
+        app.view_n.load(std::sync::atomic::Ordering::Relaxed)
+    );
 
     app.state_votes
         .write()
@@ -197,6 +216,8 @@ async fn handle_quorum_event(message: GossipsubMessage, app: &App) -> Result<(),
     app.publish(DECISION_TOPIC.clone(), serde_json::to_string(&commit)?)
         .await?;
 
+    println!("Sent decision: {:?}", commit);
+
     result
 }
 
@@ -226,7 +247,7 @@ async fn handle_decision_event(message: GossipsubMessage, app: &App) -> Result<(
         }
     }
 
-    if app.get_current_leader().await == app.local_peer_id.clone().unwrap() {
+    if app.get_current_leader().await? == app.local_peer_id.clone().unwrap() {
         handle_commitment(commit, app).await?;
     }
 
@@ -260,6 +281,8 @@ async fn handle_commitment(commit: Commit, app: &App) -> Result<(), Box<dyn Erro
         app.publish(COMMIT_TOPIC.clone(), serde_json::to_string(&b)?)
             .await?;
 
+        println!("Sent commit: {:?}", b);
+
         app.view_n
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -274,12 +297,18 @@ async fn handle_commit_event(message: GossipsubMessage, app: &App) -> Result<(),
     let block: Block = serde_json::from_str(&msg)?;
 
     if app.view_n.load(std::sync::atomic::Ordering::Relaxed) == block.clone().view_n as usize
-        && app.get_current_leader().await == message.source.unwrap().to_string()
+        && app.get_current_leader().await? == message.source.unwrap().to_string()
     {
         app.view_n
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         app.commit_block(block.clone()).await?;
     }
+
+    println!(
+        "Committed: {:?}, view_n: {}",
+        block,
+        app.view_n.load(std::sync::atomic::Ordering::Relaxed)
+    );
 
     Ok(())
 }

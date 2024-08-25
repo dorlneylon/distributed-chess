@@ -2,7 +2,7 @@ mod chess;
 mod consensus;
 mod network;
 use alloy_primitives::B256;
-use consensus::types::Chain;
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use libp2p::{
     core::upgrade, mplex, noise, swarm::SwarmBuilder, tcp::TokioTcpConfig, Multiaddr, PeerId,
@@ -10,19 +10,24 @@ use libp2p::{
 };
 use network::backend::NodeServicerBuilder;
 use network::p2p::{create_behaviour, match_behaviour, LOCAL_KEYS};
-use network::state::SwarmMessageType;
+use network::utils::SwarmMessageType;
 use once_cell::sync::Lazy;
+use pb::query::Transaction;
 use std::collections::{HashMap, HashSet};
 use std::env::args;
 use std::error::Error;
 use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 
 const PEERS: u32 = 4;
+const MAX_TXS_PER_BLOCK: u32 = 10;
+const VIEW_N_ROT_INTERVAL: u64 = 10;
 static CONNECTED_PEERS: Lazy<RwLock<Vec<String>>> = Lazy::new(|| RwLock::new(Vec::new()));
+static CLOCK: Lazy<RwLock<DateTime<Utc>>> = Lazy::new(|| RwLock::new(Utc::now()));
 
 pub mod pb {
     pub mod game {
@@ -39,8 +44,10 @@ use pb::query::node_server::NodeServer;
 pub struct App {
     pub swarm_tx: mpsc::Sender<SwarmMessageType>,
     pub db: RwLock<HashMap<String, GameState>>,
+    pub local_pool: RwLock<HashMap<String, Transaction>>,
     pub state_votes: RwLock<HashMap<B256, HashSet<String>>>,
-    pub chain: RwLock<Chain>,
+    pub latest_block_hash: RwLock<B256>,
+    pub latest_block_timestamp: RwLock<u64>,
     pub view_n: AtomicUsize,
     pub local_peer_id: Option<String>,
 }
@@ -50,8 +57,10 @@ impl App {
         App {
             swarm_tx,
             db: RwLock::new(HashMap::new()),
+            local_pool: RwLock::new(HashMap::new()),
             state_votes: RwLock::new(HashMap::new()),
-            chain: RwLock::new(Chain::default()),
+            latest_block_hash: RwLock::new(B256::default()),
+            latest_block_timestamp: RwLock::new(Utc::now().timestamp() as u64),
             view_n: AtomicUsize::new(0),
             local_peer_id: None,
         }
@@ -118,6 +127,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .serve(addr)
             .await
             .expect("gRPC server running")
+    });
+
+    let _ = tokio::spawn(async {
+        loop {
+            app.update_view_if_needed().await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     });
 
     loop {

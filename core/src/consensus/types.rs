@@ -1,61 +1,14 @@
 use crate::pb::query::Transaction;
 use alloy_primitives::{keccak256, B256};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::ops::{Index, IndexMut};
-
-#[derive(Debug)]
-pub struct Chain {
-    blocks: Vec<Block>,
-}
-
-impl Default for Chain {
-    fn default() -> Self {
-        Self {
-            blocks: vec![Block::default()],
-        }
-    }
-}
-
-impl Index<usize> for Chain {
-    type Output = Block;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.blocks[index]
-    }
-}
-
-impl IndexMut<usize> for Chain {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.blocks[index]
-    }
-}
-
-impl Chain {
-    pub fn new() -> Self {
-        let genesis = Block::default();
-        Self {
-            blocks: vec![genesis],
-        }
-    }
-
-    pub fn commit_block(&mut self, block: Block) {
-        self.blocks.push(block);
-    }
-
-    pub fn len(&self) -> usize {
-        self.blocks.len()
-    }
-
-    pub fn last(&self) -> Option<&Block> {
-        self.blocks.last()
-    }
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Block {
     pub view_n: u32,
     pub previous_block_hash: B256,
-    pub tx: Transaction,
+    pub txs: Vec<Transaction>,
+    pub timestamp: i64,
     pub hash: B256,
     pub qc: Option<QuorumCertificate>,
 }
@@ -64,7 +17,7 @@ pub struct Block {
 pub struct BlockBuilder {
     view_n: u32,
     previous_block_hash: B256,
-    tx: Transaction,
+    txs: Vec<Transaction>,
 }
 
 impl BlockBuilder {
@@ -79,18 +32,23 @@ impl BlockBuilder {
         }
     }
 
-    pub fn with_tx(self, tx: Transaction) -> Self {
-        Self { tx, ..self }
-    }
-
     pub fn build(self) -> Block {
         Block {
             view_n: self.view_n,
             previous_block_hash: self.previous_block_hash,
-            tx: self.tx.clone(),
+            txs: self.txs.clone(),
+            timestamp: Utc::now().timestamp(),
             hash: keccak256(&serde_json::to_string(&self).unwrap()),
             qc: None,
         }
+    }
+
+    pub fn add_tx(&mut self, tx: &Transaction) {
+        self.txs.push(tx.clone());
+    }
+
+    pub fn tx_size(&self) -> usize {
+        self.txs.len()
     }
 }
 
