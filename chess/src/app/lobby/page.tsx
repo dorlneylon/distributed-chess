@@ -15,10 +15,6 @@ export default function Lobby() {
     sessionStorage.setItem('addr', addr!);
 
     const publicKeyString = sessionStorage.getItem('publicKey')!;
-    const privateKeyString = sessionStorage.getItem('privateKey')!;
-
-    const publicKey = Uint8Array.from(Buffer.from(publicKeyString!, 'hex'));
-    const privateKey = Uint8Array.from(Buffer.from(privateKeyString!, 'hex'));
 
     const channel = createChannel(`http://${addr}`);
     const client = createClient(NodeDefinition, channel);

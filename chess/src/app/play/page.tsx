@@ -50,7 +50,6 @@ export default function Play() {
 
     const publicKeyString = sessionStorage.getItem('publicKey')!;
     const privateKeyString = sessionStorage.getItem('privateKey')!;
-    const publicKey = Uint8Array.from(Buffer.from(publicKeyString, 'hex'));
     const privateKey = Uint8Array.from(Buffer.from(privateKeyString, 'hex'));
     const addr = sessionStorage.getItem('addr') || '';
     const whitePlayer = useSearchParams().get('white_player') || '';

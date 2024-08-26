@@ -21,7 +21,7 @@ export default function Home() {
     <main className="flex flex-col items-center justify-center min-h-screen bg-zinc-900">
       <Card className="p-10 bg-zinc-950 shadow-lg rounded-lg max-w-md w-full">
         <h1 className="text-3xl font-semibold text-center mb-6">Enter Peer Info</h1>
-        <Card className="mb-6 bg-zinc-800">
+        <Card className="mb-6 bg-zinc-900">
           <CardBody className="text-center text-white w-full">
             Enter the host of the peer you want to connect to,
             and your nickname.

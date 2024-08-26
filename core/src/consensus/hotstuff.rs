@@ -59,7 +59,7 @@ impl App {
             }
 
             self.latest_block_hash.write().await.clone_from(&block.hash);
-            self.latest_block_timestamp
+            self.latest_timestamp
                 .write()
                 .await
                 .clone_from(&(block.timestamp as u64));
@@ -112,17 +112,13 @@ impl App {
         game.validate_move(&tx.action[0], &tx.action[1])?;
         self.validate_signature(tx).await?;
 
-        match Color::from_i32(game.turn).expect("correct color") {
-            Color::White => {
-                if tx.pub_key != game.white_player {
-                    return Err("invalid tx".into());
-                }
+        if tx.pub_key
+            != match Color::from_i32(game.turn).expect("correct color") {
+                Color::White => game.white_player,
+                Color::Black => game.black_player,
             }
-            Color::Black => {
-                if tx.pub_key != game.black_player {
-                    return Err("invalid tx".into());
-                }
-            }
+        {
+            return Err("invalid tx".into());
         }
 
         Ok(())
@@ -205,9 +201,9 @@ impl App {
     }
 
     pub async fn update_view_if_needed(&self) {
-        let latest_block_timestamp = self.latest_block_timestamp.read().await.clone();
+        let latest_timestamp = self.latest_timestamp.read().await.clone();
         let current_clock = Utc::now();
-        let elapsed = current_clock.timestamp() as u64 - latest_block_timestamp;
+        let elapsed = current_clock.timestamp() as u64 - latest_timestamp;
 
         if elapsed >= VIEW_N_ROT_INTERVAL
             && self.latest_block_hash.read().await.clone() != B256::ZERO
@@ -215,7 +211,7 @@ impl App {
             self.view_n
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-            *self.latest_block_timestamp.write().await = current_clock.timestamp() as u64;
+            *self.latest_timestamp.write().await = current_clock.timestamp() as u64;
             *CLOCK.write().await = current_clock;
 
             println!(

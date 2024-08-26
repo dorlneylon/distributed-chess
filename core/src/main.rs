@@ -44,7 +44,7 @@ pub struct App {
     pub db: RwLock<HashMap<String, GameState>>,
     pub state_votes: RwLock<HashMap<B256, HashSet<String>>>,
     pub latest_block_hash: RwLock<B256>,
-    pub latest_block_timestamp: RwLock<u64>,
+    pub latest_timestamp: RwLock<u64>,
     pub view_n: AtomicUsize,
     pub local_peer_id: Option<String>,
 }
@@ -56,7 +56,7 @@ impl App {
             db: RwLock::new(HashMap::new()),
             state_votes: RwLock::new(HashMap::new()),
             latest_block_hash: RwLock::new(B256::default()),
-            latest_block_timestamp: RwLock::new(Utc::now().timestamp() as u64),
+            latest_timestamp: RwLock::new(Utc::now().timestamp() as u64),
             view_n: AtomicUsize::new(0),
             local_peer_id: None,
         }
