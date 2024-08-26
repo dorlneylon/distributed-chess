@@ -24,7 +24,7 @@ cargo run -- -- port <port> -- peers <multiaddr_1> <peerid_1> ... <multiaddr_n> 
 
 ### Example
 
-<video controls>
-  <source src="assets/preview.mov" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+
+https://github.com/user-attachments/assets/527e3f5b-6744-4e09-a41c-c0b2bea8e285
+
+
