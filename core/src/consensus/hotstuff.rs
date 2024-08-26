@@ -1,4 +1,5 @@
 use crate::network::utils::SwarmMessageType;
+use crate::pb::game::Color;
 use crate::pb::query::Transaction;
 use crate::{
     pb::{game::GameState, query::StartRequest},
@@ -8,6 +9,8 @@ use crate::{CLOCK, CONNECTED_PEERS, VIEW_N_ROT_INTERVAL};
 use alloy_primitives::{keccak256, B256};
 use chrono::{TimeZone, Utc};
 use libp2p::gossipsub::IdentTopic;
+use libsecp256k1::{verify, Message, PublicKey, Signature};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 use super::types::{Block, BlockBuilder, QuorumCertificate};
@@ -107,8 +110,58 @@ impl App {
         };
 
         game.validate_move(&tx.action[0], &tx.action[1])?;
+        self.validate_signature(tx).await?;
+
+        match Color::from_i32(game.turn).expect("correct color") {
+            Color::White => {
+                if tx.pub_key != game.white_player {
+                    return Err("invalid tx".into());
+                }
+            }
+            Color::Black => {
+                if tx.pub_key != game.black_player {
+                    return Err("invalid tx".into());
+                }
+            }
+        }
 
         Ok(())
+    }
+
+    async fn validate_signature(&self, tx: &Transaction) -> Result<(), Box<dyn std::error::Error>> {
+        let message = serde_json::json!({
+            "whitePlayer": tx.white_player,
+            "blackPlayer": tx.black_player,
+            "action": [
+                {"x": tx.action[0].x, "y": tx.action[0].y},
+                {"x": tx.action[1].x, "y": tx.action[1].y},
+            ],
+        });
+
+        let message_str = serde_json::to_string(&message)?;
+        let message_hash = Sha256::digest(message_str.as_bytes());
+        let message = Message::parse_slice(&message_hash)?;
+        let signature_bytes = hex::decode(&tx.signature)?;
+
+        let signature = match Signature::parse_standard_slice(&signature_bytes) {
+            Ok(sig) => sig,
+            Err(_) => {
+                return Err("Invalid signature format".into());
+            }
+        };
+
+        let public_key_bytes = hex::decode(&tx.pub_key)?;
+        let public_key = match PublicKey::parse_slice(&public_key_bytes, None) {
+            Ok(key) => key,
+            Err(_) => {
+                return Err("Invalid public key format".into());
+            }
+        };
+
+        match verify(&message, &signature, &public_key) {
+            true => Ok(()),
+            false => Err("Invalid signature".into()),
+        }
     }
 
     async fn is_valid_qc(&self, qc: &QuorumCertificate) -> Result<(), Box<dyn std::error::Error>> {

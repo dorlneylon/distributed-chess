@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let node_servicer = NodeServicerBuilder::default().with_app(&*app).build();
 
-    let addr = "[::]:50050".parse()?;
+    let addr = "[::]:50053".parse()?;
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

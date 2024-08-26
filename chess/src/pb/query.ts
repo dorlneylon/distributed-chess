@@ -33,6 +33,8 @@ export interface Transaction {
   whitePlayer: string;
   blackPlayer: string;
   action: Position[];
+  signature: string;
+  pubKey: string;
 }
 
 export interface Position {
@@ -319,7 +321,7 @@ export const StartResponse = {
 };
 
 function createBaseTransaction(): Transaction {
-  return { whitePlayer: "", blackPlayer: "", action: [] };
+  return { whitePlayer: "", blackPlayer: "", action: [], signature: "", pubKey: "" };
 }
 
 export const Transaction = {
@@ -332,6 +334,12 @@ export const Transaction = {
     }
     for (const v of message.action) {
       Position.encode(v!, writer.uint32(26).fork()).ldelim();
+    }
+    if (message.signature !== "") {
+      writer.uint32(34).string(message.signature);
+    }
+    if (message.pubKey !== "") {
+      writer.uint32(42).string(message.pubKey);
     }
     return writer;
   },
@@ -364,6 +372,20 @@ export const Transaction = {
 
           message.action.push(Position.decode(reader, reader.uint32()));
           continue;
+        case 4:
+          if (tag !== 34) {
+            break;
+          }
+
+          message.signature = reader.string();
+          continue;
+        case 5:
+          if (tag !== 42) {
+            break;
+          }
+
+          message.pubKey = reader.string();
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -378,6 +400,8 @@ export const Transaction = {
       whitePlayer: isSet(object.whitePlayer) ? globalThis.String(object.whitePlayer) : "",
       blackPlayer: isSet(object.blackPlayer) ? globalThis.String(object.blackPlayer) : "",
       action: globalThis.Array.isArray(object?.action) ? object.action.map((e: any) => Position.fromJSON(e)) : [],
+      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
+      pubKey: isSet(object.pubKey) ? globalThis.String(object.pubKey) : "",
     };
   },
 
@@ -392,6 +416,12 @@ export const Transaction = {
     if (message.action?.length) {
       obj.action = message.action.map((e) => Position.toJSON(e));
     }
+    if (message.signature !== "") {
+      obj.signature = message.signature;
+    }
+    if (message.pubKey !== "") {
+      obj.pubKey = message.pubKey;
+    }
     return obj;
   },
 
@@ -403,6 +433,8 @@ export const Transaction = {
     message.whitePlayer = object.whitePlayer ?? "";
     message.blackPlayer = object.blackPlayer ?? "";
     message.action = object.action?.map((e) => Position.fromPartial(e)) || [];
+    message.signature = object.signature ?? "";
+    message.pubKey = object.pubKey ?? "";
     return message;
   },
 };

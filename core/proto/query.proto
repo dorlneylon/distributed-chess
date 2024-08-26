@@ -38,6 +38,8 @@ message Transaction {
     string white_player = 1;
     string black_player = 2;
     repeated Position action = 3;
+    string signature = 4;
+    string pub_key = 5;
 }
 
 message Position {

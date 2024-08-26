@@ -3,14 +3,18 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Input, Button, Spacer, Card, CardBody } from '@nextui-org/react';
+import * as secp256k1 from '@noble/secp256k1';
 
 export default function Home() {
   const [addr, setAddr] = useState<string>('');
-  const [username, setUsername] = useState<string>('');
   const router = useRouter();
 
   const handleNextPage = () => {
-    router.push(`/lobby?addr=${addr}&username=${username}`);
+    const privateKey = secp256k1.utils.randomPrivateKey();
+    const publicKey = secp256k1.getPublicKey(privateKey);
+    sessionStorage.setItem('privateKey', Buffer.from(privateKey).toString('hex'));
+    sessionStorage.setItem('publicKey', Buffer.from(publicKey).toString('hex'));
+    router.push(`/lobby?addr=${addr}`);
   };
 
   return (
@@ -28,13 +32,6 @@ export default function Home() {
           placeholder="127.0.0.1:3000"
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
-          className="mb-4"
-        />
-        <Input
-          isClearable
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
           className="mb-4"
         />
         <Spacer y={1} />

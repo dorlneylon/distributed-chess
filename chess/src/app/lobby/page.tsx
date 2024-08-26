@@ -12,20 +12,24 @@ export default function Lobby() {
 
     const searchParams = useSearchParams();
     const addr = searchParams.get('addr');
-    const username = searchParams.get('username');
-    sessionStorage.setItem('username', username!);
     sessionStorage.setItem('addr', addr!);
+
+    const publicKeyString = sessionStorage.getItem('publicKey')!;
+    const privateKeyString = sessionStorage.getItem('privateKey')!;
+
+    const publicKey = Uint8Array.from(Buffer.from(publicKeyString!, 'hex'));
+    const privateKey = Uint8Array.from(Buffer.from(privateKeyString!, 'hex'));
 
     const channel = createChannel(`http://${addr}`);
     const client = createClient(NodeDefinition, channel);
 
 
     useEffect(() => {
-        if (!addr || !username) return;
+        if (!addr) return;
 
         const checkForInvitation = async () => {
             try {
-                const response = await client.isInGame({ player: username });
+                const response = await client.isInGame({ player: publicKeyString });
 
                 if (response.state) {
                     router.push(`/play?white_player=${response.state!.whitePlayer}&black_player=${response.state!.blackPlayer}`);
@@ -38,11 +42,11 @@ export default function Lobby() {
         const intervalId = setInterval(checkForInvitation, 5000);
 
         return () => clearInterval(intervalId);
-    }, [addr, username]);
+    }, [addr, publicKeyString]);
 
     const handleStartGame = async () => {
         try {
-            const response = await client.start({ whitePlayer: username!, blackPlayer: opponent });
+            const response = await client.start({ whitePlayer: publicKeyString, blackPlayer: opponent });
             console.log(response);
 
             if (response.state) {
@@ -57,14 +61,16 @@ export default function Lobby() {
         <main className="flex flex-col items-center justify-center min-h-screen bg-zinc-900">
             <Card className="p-10 bg-zinc-950 shadow-lg rounded-lg max-w-md w-full">
                 <h1 className="text-3xl font-semibold text-center mb-6">Lobby</h1>
-                <Card className="mb-6 bg-zinc-800">
+                <h4 className="text-xl font-semibold text-center mb-6">Your public key: </h4>
+                <p className='text-[10px] text-center indent-0 mr-2 pb-5 mr-4 -mt-2 -ml-2'>{publicKeyString}</p>
+                <Card className="mb-6 bg-zinc-900">
                     <CardBody className="text-center text-white w-full">
-                        Enter the username of your opponent or wait for an invitation.
+                        Enter the public key of your opponent or wait for an invitation.
                     </CardBody>
                 </Card>
                 <Input
                     isClearable
-                    placeholder="Opponent Username"
+                    placeholder="Opponent's Public Key"
                     value={opponent}
                     onChange={(e) => setOpponent(e.target.value)}
                     className="mb-4"
