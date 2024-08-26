@@ -1,3 +1,5 @@
+use super::types::{Block, BlockBuilder, QuorumCertificate};
+use crate::errors::AppError;
 use crate::network::utils::SwarmMessageType;
 use crate::pb::game::Color;
 use crate::pb::query::Transaction;
@@ -12,22 +14,21 @@ use libp2p::gossipsub::IdentTopic;
 use libsecp256k1::{verify, Message, PublicKey, Signature};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-
-use super::types::{Block, BlockBuilder, QuorumCertificate};
+use tracing::info;
 
 impl App {
-    pub async fn get_current_leader(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn get_current_leader(&self) -> Result<String, AppError> {
         match CONNECTED_PEERS
             .read()
             .await
             .get(self.view_n.load(std::sync::atomic::Ordering::Relaxed) % PEERS as usize)
         {
             Some(peer) => Ok(peer.clone()),
-            None => Err("no leader".into()),
+            None => Err(AppError::NoLeaderError),
         }
     }
 
-    pub async fn commit_block(&self, block: Block) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn commit_block(&self, block: Block) -> Result<(), AppError> {
         if let Some(ref qc) = block.qc {
             self.is_valid_qc(qc).await?;
 
@@ -38,7 +39,7 @@ impl App {
                 .build();
 
             if real_block.hash != block.hash || qc.block_hash != block.hash {
-                return Err("invalid block".into());
+                return Err(AppError::BlockValidationError("invalid block".into()));
             }
 
             let version = self.db.read().await.clone();
@@ -55,7 +56,7 @@ impl App {
                 .apply_move(block.tx.action[0].clone(), block.tx.action[1].clone())
             {
                 self.db.write().await.clone_from(&version);
-                return Err(e.into());
+                return Err(AppError::InvalidTransactionError(e.to_string()));
             }
 
             self.latest_block_hash.write().await.clone_from(&block.hash);
@@ -65,24 +66,22 @@ impl App {
                 .clone_from(&(block.timestamp as u64));
             *CLOCK.write().await = Utc.timestamp_opt(block.timestamp, 0).unwrap();
 
+            info!("Committed block: {:?}", block);
             Ok(())
         } else {
-            Err("no qc".into())
+            Err(AppError::InvalidQcError)
         }
     }
 
-    pub async fn approve_proposal(
-        &self,
-        proposal: Block,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn approve_proposal(&self, proposal: Block) -> Result<(), AppError> {
         if self.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32 != proposal.view_n {
-            return Err("invalid view".into());
+            return Err(AppError::BlockValidationError("invalid view".into()));
         }
 
         let latest_block_hash = self.latest_block_hash.read().await.clone();
 
         if latest_block_hash != proposal.previous_block_hash {
-            return Err("invalid block".into());
+            return Err(AppError::BlockValidationError("invalid block".into()));
         }
 
         let real_block = BlockBuilder::default()
@@ -92,13 +91,13 @@ impl App {
             .build();
 
         if real_block.hash != proposal.hash {
-            return Err("invalid block".into());
+            return Err(AppError::BlockValidationError("invalid block".into()));
         }
 
         self.is_valid_tx(&proposal.tx).await
     }
 
-    pub async fn is_valid_tx(&self, tx: &Transaction) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn is_valid_tx(&self, tx: &Transaction) -> Result<(), AppError> {
         let game = match self
             .db
             .read()
@@ -106,7 +105,7 @@ impl App {
             .get(&format!("{}:{}", tx.white_player, tx.black_player))
         {
             Some(game) => game.clone(),
-            None => return Err("no such game".into()),
+            None => return Err(AppError::InvalidTransactionError("no such game".into())),
         };
 
         game.validate_move(&tx.action[0], &tx.action[1])?;
@@ -118,13 +117,13 @@ impl App {
                 Color::Black => game.black_player,
             }
         {
-            return Err("invalid tx".into());
+            return Err(AppError::InvalidTransactionError("invalud turn".into()));
         }
 
         Ok(())
     }
 
-    async fn validate_signature(&self, tx: &Transaction) -> Result<(), Box<dyn std::error::Error>> {
+    async fn validate_signature(&self, tx: &Transaction) -> Result<(), AppError> {
         let message = serde_json::json!({
             "whitePlayer": tx.white_player,
             "blackPlayer": tx.black_player,
@@ -134,33 +133,39 @@ impl App {
             ],
         });
 
-        let message_str = serde_json::to_string(&message)?;
+        let message_str = serde_json::to_string(&message)
+            .map_err(|e| AppError::InvalidTransactionError(e.to_string()))?;
         let message_hash = Sha256::digest(message_str.as_bytes());
-        let message = Message::parse_slice(&message_hash)?;
-        let signature_bytes = hex::decode(&tx.signature)?;
+        let message = Message::parse_slice(&message_hash)
+            .map_err(|e| AppError::InvalidTransactionError(e.to_string()))?;
+        let signature_bytes = hex::decode(&tx.signature)
+            .map_err(|e| AppError::InvalidTransactionError(e.to_string()))?;
 
         let signature = match Signature::parse_standard_slice(&signature_bytes) {
             Ok(sig) => sig,
-            Err(_) => {
-                return Err("Invalid signature format".into());
+            Err(e) => {
+                return Err(AppError::InvalidTransactionError(e.to_string()));
             }
         };
 
-        let public_key_bytes = hex::decode(&tx.pub_key)?;
+        let public_key_bytes = hex::decode(&tx.pub_key)
+            .map_err(|e| AppError::InvalidTransactionError(e.to_string()))?;
         let public_key = match PublicKey::parse_slice(&public_key_bytes, None) {
             Ok(key) => key,
-            Err(_) => {
-                return Err("Invalid public key format".into());
+            Err(e) => {
+                return Err(AppError::InvalidTransactionError(e.to_string()));
             }
         };
 
         match verify(&message, &signature, &public_key) {
             true => Ok(()),
-            false => Err("Invalid signature".into()),
+            false => Err(AppError::InvalidTransactionError(
+                "invalid signature".into(),
+            )),
         }
     }
 
-    async fn is_valid_qc(&self, qc: &QuorumCertificate) -> Result<(), Box<dyn std::error::Error>> {
+    async fn is_valid_qc(&self, qc: &QuorumCertificate) -> Result<(), AppError> {
         if let Some(res) = self.state_votes.read().await.get(&qc.block_hash).cloned() {
             let intersection_count = res
                 .intersection(&HashSet::from_iter(qc.signature.iter().cloned()))
@@ -168,36 +173,29 @@ impl App {
             if intersection_count > (2 * PEERS as usize) / 3 {
                 return Ok(());
             } else {
-                return Err("invalid qc".into());
+                return Err(AppError::InvalidQcError);
             }
         } else {
-            Err("no such block approved".into())
+            Err(AppError::InvalidQcError)
         }
     }
 
-    pub async fn start_game_if_possible(
-        &self,
-        r: StartRequest,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_game_if_possible(&self, r: StartRequest) -> Result<(), AppError> {
         let game_key = format!("{}:{}", r.white_player, r.black_player);
         let mut db_locked = self.db.write().await;
         if db_locked.contains_key(&game_key) {
-            Err("already in game".into())
+            Err(AppError::StartGameError("already in game".into()))
         } else {
             db_locked.insert(game_key, GameState::new(r.white_player, r.black_player));
             Ok(())
         }
     }
 
-    pub async fn publish(
-        &self,
-        topic: IdentTopic,
-        data: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish(&self, topic: IdentTopic, data: String) -> Result<(), AppError> {
         self.swarm_tx
             .send(SwarmMessageType::Publish(topic, data))
             .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+            .map_err(|e| AppError::SwarmError(e.to_string()))
     }
 
     pub async fn update_view_if_needed(&self) {
@@ -214,8 +212,8 @@ impl App {
             *self.latest_timestamp.write().await = current_clock.timestamp() as u64;
             *CLOCK.write().await = current_clock;
 
-            println!(
-                "Updated view_n to: {}",
+            info!(
+                "Updated view_n to {}",
                 self.view_n.load(std::sync::atomic::Ordering::Relaxed)
             );
         }

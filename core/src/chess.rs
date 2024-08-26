@@ -1,8 +1,11 @@
 use std::ops::{Index, IndexMut};
 
-use crate::pb::{
-    game::{Board, Cell, Color, GameState, Location, Piece, Row},
-    query::Position,
+use crate::{
+    errors::AppError,
+    pb::{
+        game::{Board, Cell, Color, GameState, Location, Piece, Row},
+        query::Position,
+    },
 };
 
 impl GameState {
@@ -36,7 +39,7 @@ impl GameState {
         }
     }
 
-    pub fn apply_move(&mut self, from: Position, to: Position) -> Result<(), String> {
+    pub fn apply_move(&mut self, from: Position, to: Position) -> Result<(), AppError> {
         if let Err(e) = self.validate_move(&from, &to) {
             return Err(e);
         }
@@ -57,7 +60,9 @@ impl GameState {
 
         if let Some(p) = to.clone().piece {
             if p.color == self.turn {
-                return Err("You cannot move onto your own piece".to_string());
+                return Err(AppError::InternalGameError(
+                    "You cannot move onto your own piece".to_string(),
+                ));
             }
         }
 
@@ -71,7 +76,7 @@ impl GameState {
         Ok(())
     }
 
-    pub fn validate_move(&self, from: &Position, to: &Position) -> Result<(), String> {
+    pub fn validate_move(&self, from: &Position, to: &Position) -> Result<(), AppError> {
         let from = Location::from_pos(
             from.clone(),
             self.board.clone().unwrap().rows[from.clone().x as usize].cells
@@ -89,21 +94,28 @@ impl GameState {
         self.validate_move_inner(&from, &to)
     }
 
-    fn validate_move_inner(&self, from: &Location, to: &Location) -> Result<(), String> {
-        println!("{:?}", from);
+    fn validate_move_inner(&self, from: &Location, to: &Location) -> Result<(), AppError> {
         let piece = match &from.piece {
             Some(p) => p,
-            None => return Err("No piece at the source location".to_string()),
+            None => {
+                return Err(AppError::InternalGameError(
+                    "No piece at the source location".to_string(),
+                ));
+            }
         };
 
         let current_color = Color::from_i32(self.turn).expect("Correct color");
 
         if piece.color != current_color as i32 {
-            return Err("It's not this piece's turn to move".to_string());
+            return Err(AppError::InternalGameError(
+                "It's not this piece's turn to move".to_string(),
+            ));
         }
 
         if !piece.can_move_to(from, to, self.board.as_ref().unwrap()) {
-            return Err("Invalid move for the piece".to_string());
+            return Err(AppError::InternalGameError(
+                "Invalid move for the piece".to_string(),
+            ));
         }
 
         Ok(())

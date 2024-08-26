@@ -1,5 +1,6 @@
 use crate::{
     consensus::types::{Block, BlockBuilder, Commit, QuorumCertificate},
+    errors::AppError,
     network::utils::SwarmMessageType,
     pb::query::{StartRequest, Transaction},
     App, PEERS,
@@ -18,6 +19,7 @@ use libp2p::{
 use once_cell::sync::Lazy;
 use std::time::Duration;
 use std::{collections::HashSet, error::Error};
+use tracing::info;
 
 pub static LOCAL_KEYS: Lazy<identity::Keypair> = Lazy::new(identity::Keypair::generate_ed25519);
 pub static PROPOSAL_TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("proposal"));
@@ -65,7 +67,7 @@ pub async fn match_behaviour(
 ) -> Result<(), Box<dyn Error>> {
     match event {
         SwarmEvent::NewListenAddr { address, .. } => {
-            println!(
+            info!(
                 "Listening on {:?}, {:?}",
                 address,
                 app.local_peer_id.clone().unwrap()
@@ -83,7 +85,7 @@ pub async fn match_behaviour(
 
 async fn handle_identify(event: IdentifyEvent, app: &App) -> Result<(), Box<dyn Error>> {
     if let IdentifyEvent::Received { peer_id, info } = event {
-        println!("Received peer info: {:?}", info);
+        info!("Received peer: {:?}", info);
 
         if info
             .protocols
@@ -104,16 +106,6 @@ async fn handle_identify(event: IdentifyEvent, app: &App) -> Result<(), Box<dyn 
 
 async fn handle_gossipsub(event: GossipsubEvent, app: &App) -> Result<(), Box<dyn Error>> {
     if let GossipsubEvent::Message { message, .. } = event {
-        let msg = String::from_utf8_lossy(&message.data);
-        println!("Received message decoded: {:?}", msg);
-
-        println!(
-            "\n{:?}\n{:?}\n{:?}\n",
-            app.latest_block_hash.read().await,
-            app.view_n.load(std::sync::atomic::Ordering::Relaxed),
-            app.db.read().await,
-        );
-
         // TODO: maybe there are some ways to do this elegant w/o traits
         if message.topic == START_TOPIC.hash() {
             handle_start_event(message, app).await?;
@@ -159,12 +151,6 @@ pub async fn broadcast_block(app: &App, tx: &Transaction) -> Result<(), Box<dyn 
     app.publish(QUORUM_TOPIC.clone(), serde_json::to_string(&block)?)
         .await?;
 
-    println!(
-        "Broadcasted block: {:?} for view_n: {}",
-        block,
-        app.view_n.load(std::sync::atomic::Ordering::Relaxed)
-    );
-
     app.state_votes
         .write()
         .await
@@ -175,11 +161,11 @@ pub async fn broadcast_block(app: &App, tx: &Transaction) -> Result<(), Box<dyn 
     Ok(())
 }
 
-async fn handle_quorum_event(message: GossipsubMessage, app: &App) -> Result<(), Box<dyn Error>> {
+async fn handle_quorum_event(message: GossipsubMessage, app: &App) -> Result<(), AppError> {
     let msg = String::from_utf8_lossy(&message.data);
-    let block: Block = serde_json::from_str(&msg)?;
+    let block: Block =
+        serde_json::from_str(&msg).map_err(|e| AppError::SwarmError(e.to_string()))?;
     let result = app.approve_proposal(block.clone()).await;
-    println!("Approve result: {:?}", result);
     let hash = block.hash;
 
     let commit = Commit {
@@ -196,10 +182,11 @@ async fn handle_quorum_event(message: GossipsubMessage, app: &App) -> Result<(),
             .insert(app.local_peer_id.clone().unwrap());
     }
 
-    app.publish(DECISION_TOPIC.clone(), serde_json::to_string(&commit)?)
-        .await?;
+    let publishing_message =
+        serde_json::to_string(&commit).map_err(|e| AppError::SwarmError(e.to_string()))?;
 
-    println!("Sent decision: {:?}", commit);
+    app.publish(DECISION_TOPIC.clone(), publishing_message)
+        .await?;
 
     result
 }
@@ -264,8 +251,6 @@ async fn handle_commitment(commit: Commit, app: &App) -> Result<(), Box<dyn Erro
         app.publish(COMMIT_TOPIC.clone(), serde_json::to_string(&b)?)
             .await?;
 
-        println!("Sent commit: {:?}", b);
-
         app.view_n
             .store(b.view_n as usize + 1, std::sync::atomic::Ordering::Relaxed);
 
@@ -288,12 +273,6 @@ async fn handle_commit_event(message: GossipsubMessage, app: &App) -> Result<(),
         );
         app.commit_block(block.clone()).await?;
     }
-
-    println!(
-        "Committed: {:?}, view_n: {}",
-        block,
-        app.view_n.load(std::sync::atomic::Ordering::Relaxed)
-    );
 
     Ok(())
 }

@@ -1,8 +1,11 @@
 mod chess;
 mod consensus;
+mod errors;
 mod network;
 use alloy_primitives::B256;
 use chrono::{DateTime, Utc};
+use clap::{Arg, ArgAction, Command};
+use dotenv::dotenv;
 use futures::StreamExt;
 use libp2p::{
     core::upgrade, mplex, noise, swarm::SwarmBuilder, tcp::TokioTcpConfig, Multiaddr, PeerId,
@@ -13,7 +16,6 @@ use network::p2p::{create_behaviour, match_behaviour, LOCAL_KEYS};
 use network::utils::SwarmMessageType;
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
-use std::env::args;
 use std::error::Error;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
@@ -21,6 +23,8 @@ use tokio::sync::{mpsc, RwLock};
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
+use tracing::{error, info};
+use tracing_subscriber;
 
 const PEERS: u32 = 4;
 const VIEW_N_ROT_INTERVAL: u64 = 10;
@@ -65,6 +69,7 @@ impl App {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    dotenv().ok();
     tracing_subscriber::fmt::init();
 
     let local_peer_id = LOCAL_KEYS.public().to_peer_id();
@@ -87,17 +92,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .build(),
     );
 
-    for (peer_id, multiaddr) in fetch_peers().await {
-        swarm.dial(multiaddr.clone())?;
+    let matches = Command::new("Chess Network Node")
+        .arg(
+            Arg::new("peers")
+                .short('p')
+                .long("peers")
+                .help("List of peers to connect to, in the format 'multiaddr peer_id'")
+                .num_args(2..)
+                .value_names(["MULTIADDR", "PEER_ID"])
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("port")
+                .short('P')
+                .long("port")
+                .help("Set the gRPC server port")
+                .default_value("50050")
+                .action(ArgAction::Set),
+        )
+        .get_matches();
 
-        swarm
-            .behaviour_mut()
-            .kademlia
-            .add_address(&peer_id, multiaddr.clone());
+    if let Some(peers) = matches.get_many::<String>("peers") {
+        let mut peer_iter = peers.into_iter();
+        while let (Some(multiaddr), Some(peer_id_str)) = (peer_iter.next(), peer_iter.next()) {
+            let multiaddr: Multiaddr = multiaddr.parse()?;
+            let peer_id: PeerId = peer_id_str.parse()?;
+            swarm.dial(multiaddr.clone())?;
 
-        swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer_id, multiaddr.clone());
 
-        println!("Dialed with {:?}, {:?}", peer_id, multiaddr);
+            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+
+            info!("Dialed with {:?}, {:?}", peer_id, multiaddr);
+        }
     }
 
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
@@ -108,7 +138,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let node_servicer = NodeServicerBuilder::default().with_app(&*app).build();
 
-    let addr = "[::]:50053".parse()?;
+    let grpc_port = matches.get_one::<String>("port").unwrap();
+    let addr = format!("[::]:{}", grpc_port).parse()?;
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -154,27 +185,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             event = swarm.select_next_some() => {
                 if let Err(e) = match_behaviour(event, &app).await {
-                    eprintln!("Error: {:?}", e);
+                    error!("{:?}", e);
                 }
             }
         }
     }
-}
-
-async fn fetch_peers() -> Vec<(PeerId, Multiaddr)> {
-    let ars: Vec<_> = args().collect();
-
-    if ars.len() == 1 {
-        return vec![];
-    }
-
-    let mut ans = vec![];
-
-    for (i, _) in ars[1..].iter().enumerate().skip(1).step_by(2) {
-        let addr = ars[i].parse::<Multiaddr>().expect("Invalid multiaddr");
-        let peer_id = ars[i + 1].parse::<PeerId>().expect("Invalid peer id");
-        ans.push((peer_id, addr));
-    }
-
-    ans
 }
