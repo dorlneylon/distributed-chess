@@ -73,9 +73,13 @@ impl App {
         }
     }
 
-    pub async fn approve_proposal(&self, proposal: Block) -> Result<(), AppError> {
+    pub async fn approve_proposal(&self, proposal: Block, source: String) -> Result<(), AppError> {
         if self.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32 != proposal.view_n {
             return Err(AppError::BlockValidationError("invalid view".into()));
+        }
+
+        if source != self.get_current_leader().await? {
+            return Err(AppError::BlockValidationError("incorrect leader".into()));
         }
 
         let latest_block_hash = self.latest_block_hash.read().await.clone();

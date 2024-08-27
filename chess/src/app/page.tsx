@@ -23,8 +23,7 @@ export default function Home() {
         <h1 className="text-3xl font-semibold text-center mb-6">Enter Peer Info</h1>
         <Card className="mb-6 bg-zinc-900">
           <CardBody className="text-center text-white w-full">
-            Enter the host of the peer you want to connect to,
-            and your nickname.
+            Enter the host of the peer you want to connect to.
           </CardBody>
         </Card>
         <Input

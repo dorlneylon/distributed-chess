@@ -142,30 +142,44 @@ async fn handle_proposal_event(message: GossipsubMessage, app: &App) -> Result<(
 }
 
 pub async fn broadcast_block(app: &App, tx: &Transaction) -> Result<(), Box<dyn Error>> {
-    let block = BlockBuilder::default()
-        .with_previous_block_hash(app.latest_block_hash.read().await.clone())
-        .with_tx(tx.clone())
-        .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32)
-        .build();
+    match app.is_valid_tx(tx).await {
+        Ok(_) => {
+            let block = BlockBuilder::default()
+                .with_previous_block_hash(app.latest_block_hash.read().await.clone())
+                .with_tx(tx.clone())
+                .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32)
+                .build();
 
-    app.publish(QUORUM_TOPIC.clone(), serde_json::to_string(&block)?)
-        .await?;
+            app.publish(QUORUM_TOPIC.clone(), serde_json::to_string(&block)?)
+                .await?;
 
-    app.state_votes
-        .write()
-        .await
-        .entry(block.hash)
-        .or_insert_with(HashSet::new)
-        .insert(app.local_peer_id.clone().unwrap());
+            app.state_votes
+                .write()
+                .await
+                .entry(block.hash)
+                .or_insert_with(HashSet::new)
+                .insert(app.local_peer_id.clone().unwrap());
 
-    Ok(())
+            Ok(())
+        }
+        Err(e) => Err(Box::new(e)),
+    }
 }
 
 async fn handle_quorum_event(message: GossipsubMessage, app: &App) -> Result<(), AppError> {
     let msg = String::from_utf8_lossy(&message.data);
     let block: Block =
         serde_json::from_str(&msg).map_err(|e| AppError::SwarmError(e.to_string()))?;
-    let result = app.approve_proposal(block.clone()).await;
+    let source = message.source.unwrap().to_string();
+    let result = app.approve_proposal(block.clone(), source.clone()).await;
+
+    app.state_votes
+        .write()
+        .await
+        .entry(block.hash)
+        .or_insert(HashSet::new())
+        .insert(source);
+
     let hash = block.hash;
 
     let commit = Commit {
@@ -203,17 +217,6 @@ async fn handle_decision_event(message: GossipsubMessage, app: &App) -> Result<(
                 .entry(commit.block.hash)
                 .or_insert_with(HashSet::new)
                 .insert(source.to_string());
-        }
-    }
-
-    if app.view_n.load(std::sync::atomic::Ordering::Relaxed) == commit.block.view_n as usize {
-        let my_proposal = Commit {
-            block: commit.block.clone(),
-            decision: app.approve_proposal(commit.block.clone()).await.is_ok(),
-        };
-        if my_proposal.decision {
-            app.publish(DECISION_TOPIC.clone(), serde_json::to_string(&my_proposal)?)
-                .await?;
         }
     }
 
