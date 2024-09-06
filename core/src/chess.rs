@@ -141,10 +141,10 @@ impl Piece {
         match self.kind.as_str() {
             "P" => self.validate_pawn_move(from, to, dx, dy, board),
             "R" => self.validate_rook_move(from, to, dx, dy, board),
-            "N" => self.validate_knight_move(dx, dy),
+            "N" => self.validate_knight_move(from, to, dx, dy, board),
             "B" => self.validate_bishop_move(from, to, dx, dy, board),
             "Q" => self.validate_queen_move(from, to, dx, dy, board),
-            "K" => self.validate_king_move(dx, dy),
+            "K" => self.validate_king_move(from, to, dx, dy, board),
             _ => false,
         }
     }
@@ -204,36 +204,37 @@ impl Piece {
             return false;
         }
 
+        let (x_direction, y_direction) = (dx.signum(), dy.signum());
+
         // Check if the path is clear
-        let (x_start, x_end) = if from.coords[0] < to.coords[0] {
-            (from.coords[0], to.coords[0])
-        } else {
-            (to.coords[0], from.coords[0])
-        };
+        let mut x_coord = from.coords[0] as i32 + x_direction;
+        let mut y_coord = from.coords[1] as i32 + y_direction;
 
-        let (y_start, y_end) = if from.coords[1] < to.coords[1] {
-            (from.coords[1], to.coords[1])
-        } else {
-            (to.coords[1], from.coords[1])
-        };
-
-        for x in x_start..x_end {
-            for y in y_start..y_end {
-                if !board.is_empty(&Location::new(
-                    vec![x, y],
-                    Piece::new_from_i32(self.color, self.kind.clone()),
-                )) {
-                    return false;
-                }
+        while x_coord != to.coords[0] as i32 || y_coord != to.coords[1] as i32 {
+            if !board.is_empty(&Location::new(
+                vec![x_coord as u32, y_coord as u32],
+                Piece::new_from_i32(self.color, self.kind.clone()),
+            )) {
+                return false;
             }
+            x_coord += x_direction;
+            y_coord += y_direction;
         }
 
-        true
+        board.is_empty_or_enemy(to, self.color)
     }
 
-    fn validate_knight_move(&self, dx: i32, dy: i32) -> bool {
+    fn validate_knight_move(
+        &self,
+        _: &Location,
+        to: &Location,
+        dx: i32,
+        dy: i32,
+        board: &Board,
+    ) -> bool {
         // Knight moves: in "L" shapes
-        (dx.abs() == 2 && dy.abs() == 1) || (dx.abs() == 1 && dy.abs() == 2)
+        ((dx.abs() == 2 && dy.abs() == 1) || (dx.abs() == 1 && dy.abs() == 2))
+            && board.is_empty_or_enemy(to, self.color)
     }
 
     fn validate_bishop_move(
@@ -250,24 +251,25 @@ impl Piece {
         }
 
         // Check if the path is clear
-        let x_direction = if from.coords[0] < to.coords[0] { 1 } else { -1 };
-        let y_direction = if from.coords[1] < to.coords[1] { 1 } else { -1 };
+        let x_direction = dx.signum();
+        let y_direction = dy.signum();
 
-        let mut x = from.coords[0] as i32;
-        let mut y = from.coords[1] as i32;
+        let mut x = from.coords[0] as i32 + x_direction;
+        let mut y = from.coords[1] as i32 + y_direction;
 
-        while x != (to.coords[0] as i32 - x_direction) && y != (to.coords[1] as i32 - y_direction) {
-            x += x_direction;
-            y += y_direction;
+        while x != to.coords[0] as i32 || y != to.coords[1] as i32 {
             if !board.is_empty(&Location::new(
                 vec![x as u32, y as u32],
                 Piece::new_from_i32(self.color, self.kind.clone()),
             )) {
                 return false;
             }
+
+            x += x_direction;
+            y += y_direction;
         }
 
-        true
+        board.is_empty_or_enemy(to, self.color)
     }
 
     fn validate_queen_move(
@@ -283,9 +285,16 @@ impl Piece {
             || self.validate_bishop_move(from, to, dx, dy, board)
     }
 
-    fn validate_king_move(&self, dx: i32, dy: i32) -> bool {
+    fn validate_king_move(
+        &self,
+        _: &Location,
+        to: &Location,
+        dx: i32,
+        dy: i32,
+        board: &Board,
+    ) -> bool {
         // King moves: one square in any direction
-        dx.abs() <= 1 && dy.abs() <= 1
+        dx.abs() <= 1 && dy.abs() <= 1 && board.is_empty_or_enemy(to, self.color)
     }
 }
 

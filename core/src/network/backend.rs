@@ -11,7 +11,6 @@ use crate::{
 };
 use alloy_primitives::keccak256;
 use tonic::{Request, Response, Status};
-use tracing::error;
 
 pub struct NodeServicer {
     app: &'static App,
@@ -87,7 +86,6 @@ impl Node for NodeServicer {
         );
 
         let serialized = serde_json::to_string(&r).map_err(|e| Status::internal(e.to_string()))?;
-        error!("serialized: {}", serialized);
 
         self.app
             .publish(PROPOSAL_TOPIC.clone(), serialized)

@@ -14,7 +14,7 @@ use libp2p::gossipsub::IdentTopic;
 use libsecp256k1::{verify, Message, PublicKey, Signature};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use tracing::{error, info};
+use tracing::info;
 
 impl App {
     pub async fn get_current_leader(&self) -> Result<String, AppError> {
@@ -102,7 +102,7 @@ impl App {
             return Err(AppError::BlockValidationError(e.to_string()));
         }
 
-        error!("Approve proposal: {:?}", proposal);
+        info!("Approve proposal: {:?}", proposal);
 
         if proposal.tx.game_state_hash == Some(self.calculate_game_state_hash(&proposal.tx).await?)
         {
