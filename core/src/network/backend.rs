@@ -9,7 +9,9 @@ use crate::{
     },
     App,
 };
+use alloy_primitives::keccak256;
 use tonic::{Request, Response, Status};
+use tracing::error;
 
 pub struct NodeServicer {
     app: &'static App,
@@ -65,11 +67,27 @@ impl Node for NodeServicer {
         &self,
         request: Request<Transaction>,
     ) -> Result<Response<TransactionResponse>, Status> {
-        let r = request.into_inner();
+        let mut r = request.into_inner();
         if self.app.is_valid_tx(&r).await.is_err() {
             return Ok(Response::new(TransactionResponse { ok: false }));
         }
+        r.game_state_hash = Some(
+            keccak256(
+                serde_json::to_string(
+                    self.app
+                        .db
+                        .read()
+                        .await
+                        .get(&format!("{}:{}", r.white_player, r.black_player))
+                        .unwrap(),
+                )
+                .map_err(|e| Status::internal(e.to_string()))?,
+            )
+            .to_string(),
+        );
+
         let serialized = serde_json::to_string(&r).map_err(|e| Status::internal(e.to_string()))?;
+        error!("serialized: {}", serialized);
 
         self.app
             .publish(PROPOSAL_TOPIC.clone(), serialized)

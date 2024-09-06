@@ -37,9 +37,10 @@ message StartResponse {
 message Transaction {
     string white_player = 1;
     string black_player = 2;
-    repeated Position action = 3;
-    string signature = 4;
-    string pub_key = 5;
+    optional string game_state_hash = 3;
+    repeated Position action = 4;
+    string signature = 5;
+    string pub_key = 6;
 }
 
 message Position {

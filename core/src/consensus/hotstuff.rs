@@ -14,7 +14,7 @@ use libp2p::gossipsub::IdentTopic;
 use libsecp256k1::{verify, Message, PublicKey, Signature};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use tracing::info;
+use tracing::{error, info};
 
 impl App {
     pub async fn get_current_leader(&self) -> Result<String, AppError> {
@@ -98,7 +98,18 @@ impl App {
             return Err(AppError::BlockValidationError("invalid block".into()));
         }
 
-        self.is_valid_tx(&proposal.tx).await
+        if let Err(e) = self.is_valid_tx(&proposal.tx).await {
+            return Err(AppError::BlockValidationError(e.to_string()));
+        }
+
+        error!("Approve proposal: {:?}", proposal);
+
+        if proposal.tx.game_state_hash == Some(self.calculate_game_state_hash(&proposal.tx).await?)
+        {
+            Ok(())
+        } else {
+            Err(AppError::BlockValidationError("inequal game states".into()))
+        }
     }
 
     pub async fn is_valid_tx(&self, tx: &Transaction) -> Result<(), AppError> {
@@ -125,6 +136,21 @@ impl App {
         }
 
         Ok(())
+    }
+
+    pub async fn calculate_game_state_hash(&self, tx: &Transaction) -> Result<String, AppError> {
+        let game = self
+            .db
+            .read()
+            .await
+            .get(&format!("{}:{}", tx.white_player, tx.black_player))
+            .unwrap()
+            .to_owned();
+
+        let serialized = serde_json::to_string(&game)
+            .map_err(|e| AppError::BlockValidationError(e.to_string()))?;
+
+        Ok(keccak256(serialized).to_string())
     }
 
     async fn validate_signature(&self, tx: &Transaction) -> Result<(), AppError> {
