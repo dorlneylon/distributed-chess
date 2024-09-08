@@ -8,7 +8,8 @@ message GameState {
     Color turn = 1;
     string white_player = 2;
     string black_player = 3;
-    Board board = 6;
+    optional string history = 4;
+    Board board = 5;
 }
 
 message Piece {

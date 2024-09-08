@@ -146,6 +146,16 @@ pub async fn broadcast_block(app: &App, tx: &Transaction) -> Result<(), Box<dyn 
         Ok(_) => {
             let block = BlockBuilder::default()
                 .with_previous_block_hash(app.latest_block_hash.read().await.clone())
+                .with_history(
+                    app.db
+                        .read()
+                        .await
+                        .get(&format!("{}:{}", tx.white_player, tx.black_player))
+                        .unwrap()
+                        .history
+                        .clone()
+                        .unwrap_or("".to_string()),
+                )
                 .with_tx(tx.clone())
                 .with_view_n(app.view_n.load(std::sync::atomic::Ordering::Relaxed) as u32)
                 .build();

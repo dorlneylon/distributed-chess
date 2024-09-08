@@ -9,6 +9,7 @@ pub struct Block {
     pub previous_block_hash: B256,
     pub tx: Transaction,
     pub hash: B256,
+    pub history: String,
     pub timestamp: i64,
     pub qc: Option<QuorumCertificate>,
 }
@@ -17,6 +18,7 @@ pub struct Block {
 pub struct BlockBuilder {
     view_n: u32,
     previous_block_hash: B256,
+    history: String,
     tx: Transaction,
 }
 
@@ -32,6 +34,10 @@ impl BlockBuilder {
         }
     }
 
+    pub fn with_history(self, history: String) -> Self {
+        Self { history, ..self }
+    }
+
     pub fn with_tx(self, tx: Transaction) -> Self {
         Self { tx, ..self }
     }
@@ -41,6 +47,7 @@ impl BlockBuilder {
             view_n: self.view_n,
             previous_block_hash: self.previous_block_hash,
             tx: self.tx.clone(),
+            history: self.history.clone(),
             timestamp: Utc::now().timestamp(),
             hash: keccak256(&serde_json::to_string(&self).unwrap()),
             qc: None,

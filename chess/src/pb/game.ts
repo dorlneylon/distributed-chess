@@ -46,6 +46,7 @@ export interface GameState {
   turn: Color;
   whitePlayer: string;
   blackPlayer: string;
+  history?: string | undefined;
   board: Board | undefined;
 }
 
@@ -72,7 +73,7 @@ export interface Cell {
 }
 
 function createBaseGameState(): GameState {
-  return { turn: 0, whitePlayer: "", blackPlayer: "", board: undefined };
+  return { turn: 0, whitePlayer: "", blackPlayer: "", history: undefined, board: undefined };
 }
 
 export const GameState = {
@@ -86,8 +87,11 @@ export const GameState = {
     if (message.blackPlayer !== "") {
       writer.uint32(26).string(message.blackPlayer);
     }
+    if (message.history !== undefined) {
+      writer.uint32(34).string(message.history);
+    }
     if (message.board !== undefined) {
-      Board.encode(message.board, writer.uint32(50).fork()).ldelim();
+      Board.encode(message.board, writer.uint32(42).fork()).ldelim();
     }
     return writer;
   },
@@ -120,8 +124,15 @@ export const GameState = {
 
           message.blackPlayer = reader.string();
           continue;
-        case 6:
-          if (tag !== 50) {
+        case 4:
+          if (tag !== 34) {
+            break;
+          }
+
+          message.history = reader.string();
+          continue;
+        case 5:
+          if (tag !== 42) {
             break;
           }
 
@@ -141,6 +152,7 @@ export const GameState = {
       turn: isSet(object.turn) ? colorFromJSON(object.turn) : 0,
       whitePlayer: isSet(object.whitePlayer) ? globalThis.String(object.whitePlayer) : "",
       blackPlayer: isSet(object.blackPlayer) ? globalThis.String(object.blackPlayer) : "",
+      history: isSet(object.history) ? globalThis.String(object.history) : undefined,
       board: isSet(object.board) ? Board.fromJSON(object.board) : undefined,
     };
   },
@@ -156,6 +168,9 @@ export const GameState = {
     if (message.blackPlayer !== "") {
       obj.blackPlayer = message.blackPlayer;
     }
+    if (message.history !== undefined) {
+      obj.history = message.history;
+    }
     if (message.board !== undefined) {
       obj.board = Board.toJSON(message.board);
     }
@@ -170,6 +185,7 @@ export const GameState = {
     message.turn = object.turn ?? 0;
     message.whitePlayer = object.whitePlayer ?? "";
     message.blackPlayer = object.blackPlayer ?? "";
+    message.history = object.history ?? undefined;
     message.board = (object.board !== undefined && object.board !== null) ? Board.fromPartial(object.board) : undefined;
     return message;
   },

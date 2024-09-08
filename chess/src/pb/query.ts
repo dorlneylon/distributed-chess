@@ -32,6 +32,7 @@ export interface StartResponse {
 export interface Transaction {
   whitePlayer: string;
   blackPlayer: string;
+  gameStateHash?: string | undefined;
   action: Position[];
   signature: string;
   pubKey: string;
@@ -321,7 +322,7 @@ export const StartResponse = {
 };
 
 function createBaseTransaction(): Transaction {
-  return { whitePlayer: "", blackPlayer: "", action: [], signature: "", pubKey: "" };
+  return { whitePlayer: "", blackPlayer: "", gameStateHash: undefined, action: [], signature: "", pubKey: "" };
 }
 
 export const Transaction = {
@@ -332,14 +333,17 @@ export const Transaction = {
     if (message.blackPlayer !== "") {
       writer.uint32(18).string(message.blackPlayer);
     }
+    if (message.gameStateHash !== undefined) {
+      writer.uint32(26).string(message.gameStateHash);
+    }
     for (const v of message.action) {
-      Position.encode(v!, writer.uint32(26).fork()).ldelim();
+      Position.encode(v!, writer.uint32(34).fork()).ldelim();
     }
     if (message.signature !== "") {
-      writer.uint32(34).string(message.signature);
+      writer.uint32(42).string(message.signature);
     }
     if (message.pubKey !== "") {
-      writer.uint32(42).string(message.pubKey);
+      writer.uint32(50).string(message.pubKey);
     }
     return writer;
   },
@@ -370,17 +374,24 @@ export const Transaction = {
             break;
           }
 
-          message.action.push(Position.decode(reader, reader.uint32()));
+          message.gameStateHash = reader.string();
           continue;
         case 4:
           if (tag !== 34) {
             break;
           }
 
-          message.signature = reader.string();
+          message.action.push(Position.decode(reader, reader.uint32()));
           continue;
         case 5:
           if (tag !== 42) {
+            break;
+          }
+
+          message.signature = reader.string();
+          continue;
+        case 6:
+          if (tag !== 50) {
             break;
           }
 
@@ -399,6 +410,7 @@ export const Transaction = {
     return {
       whitePlayer: isSet(object.whitePlayer) ? globalThis.String(object.whitePlayer) : "",
       blackPlayer: isSet(object.blackPlayer) ? globalThis.String(object.blackPlayer) : "",
+      gameStateHash: isSet(object.gameStateHash) ? globalThis.String(object.gameStateHash) : undefined,
       action: globalThis.Array.isArray(object?.action) ? object.action.map((e: any) => Position.fromJSON(e)) : [],
       signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
       pubKey: isSet(object.pubKey) ? globalThis.String(object.pubKey) : "",
@@ -412,6 +424,9 @@ export const Transaction = {
     }
     if (message.blackPlayer !== "") {
       obj.blackPlayer = message.blackPlayer;
+    }
+    if (message.gameStateHash !== undefined) {
+      obj.gameStateHash = message.gameStateHash;
     }
     if (message.action?.length) {
       obj.action = message.action.map((e) => Position.toJSON(e));
@@ -432,6 +447,7 @@ export const Transaction = {
     const message = createBaseTransaction();
     message.whitePlayer = object.whitePlayer ?? "";
     message.blackPlayer = object.blackPlayer ?? "";
+    message.gameStateHash = object.gameStateHash ?? undefined;
     message.action = object.action?.map((e) => Position.fromPartial(e)) || [];
     message.signature = object.signature ?? "";
     message.pubKey = object.pubKey ?? "";

@@ -14,6 +14,7 @@ impl GameState {
             white_player: white,
             black_player: black,
             turn: Color::White as i32,
+            history: Some("".to_string()),
             board: Some(Board::new()),
         }
     }
@@ -43,6 +44,8 @@ impl GameState {
         if let Err(e) = self.validate_move(&from, &to) {
             return Err(e);
         }
+
+        self.update_history(&[&from, &to])?;
 
         let from = Location::from_pos(
             from.clone(),
@@ -118,6 +121,65 @@ impl GameState {
             ));
         }
 
+        Ok(())
+    }
+
+    fn position_to_notation(pos: &Position) -> String {
+        let col = (b'a' + pos.y as u8) as char;
+        let row = (pos.x + 1).to_string();
+        format!("{}{}", col, row)
+    }
+
+    fn convert_move_to_notation(
+        from: &Position,
+        to: &Position,
+        piece: &Piece,
+        capture: bool,
+    ) -> String {
+        let mut notation = String::new();
+
+        if piece.kind != "P" {
+            notation.push_str(&piece.kind);
+        }
+
+        if capture {
+            if piece.kind == "P" {
+                notation.push((b'a' + from.y as u8) as char);
+            }
+            notation.push('x');
+        }
+
+        notation.push_str(&Self::position_to_notation(to));
+        notation
+    }
+
+    pub fn update_history(&mut self, action: &[&Position]) -> Result<(), AppError> {
+        let notation = Self::convert_move_to_notation(
+            action[0],
+            action[1],
+            self.board.as_ref().unwrap().rows[action[0].x as usize].cells[action[0].y as usize]
+                .piece
+                .as_ref()
+                .unwrap(),
+            self.board.as_ref().unwrap().rows[action[1].x as usize].cells[action[1].y as usize]
+                .piece
+                .is_some(),
+        );
+
+        let n = self
+            .history
+            .as_ref()
+            .unwrap()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .len();
+
+        self.history.as_mut().unwrap().push_str(&format!(
+            "{}{}. {}",
+            if n == 0 { "" } else { " " },
+            n + 1,
+            notation
+        ));
         Ok(())
     }
 }

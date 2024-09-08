@@ -32,31 +32,30 @@ impl App {
         if let Some(ref qc) = block.qc {
             self.is_valid_qc(qc).await?;
 
-            let real_block = BlockBuilder::default()
-                .with_previous_block_hash(block.previous_block_hash)
-                .with_tx(block.tx.clone())
-                .with_view_n(block.view_n)
-                .build();
-
-            if real_block.hash != block.hash || qc.block_hash != block.hash {
-                return Err(AppError::BlockValidationError("invalid block".into()));
-            }
-
             let version = self.db.read().await.clone();
 
-            if let Err(e) = self
-                .db
-                .write()
-                .await
-                .get_mut(&format!(
-                    "{}:{}",
-                    block.tx.white_player, block.tx.black_player
-                ))
-                .unwrap()
-                .apply_move(block.tx.action[0].clone(), block.tx.action[1].clone())
-            {
-                self.db.write().await.clone_from(&version);
-                return Err(AppError::InvalidTransactionError(e.to_string()));
+            if let Some(g) = self.db.write().await.get_mut(&format!(
+                "{}:{}",
+                block.tx.white_player, block.tx.black_player
+            )) {
+                let real_block = BlockBuilder::default()
+                    .with_previous_block_hash(block.previous_block_hash)
+                    .with_history(g.history.clone().unwrap())
+                    .with_tx(block.tx.clone())
+                    .with_view_n(block.view_n)
+                    .build();
+
+                if real_block.hash != block.hash || qc.block_hash != block.hash {
+                    return Err(AppError::BlockValidationError("invalid block".into()));
+                }
+
+                if let Err(e) = g.apply_move(block.tx.action[0].clone(), block.tx.action[1].clone())
+                {
+                    self.db.write().await.clone_from(&version);
+                    return Err(AppError::InvalidTransactionError(e.to_string()));
+                }
+            } else {
+                return Err(AppError::BlockValidationError("no such game".into()));
             }
 
             self.latest_block_hash.write().await.clone_from(&block.hash);
@@ -91,6 +90,19 @@ impl App {
         let real_block = BlockBuilder::default()
             .with_previous_block_hash(proposal.previous_block_hash)
             .with_tx(proposal.tx.clone())
+            .with_history(
+                self.db
+                    .read()
+                    .await
+                    .get(&format!(
+                        "{}:{}",
+                        proposal.tx.white_player, proposal.tx.black_player
+                    ))
+                    .unwrap()
+                    .history
+                    .clone()
+                    .unwrap(),
+            )
             .with_view_n(proposal.view_n)
             .build();
 
